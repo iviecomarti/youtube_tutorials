@@ -1,0 +1,127 @@
+#Script to Create PowerPoint Summaries of Image Segmentation
+@author: Isaac Vieco-Martí
+
+
+Officer documentation: https://davidgohel.github.io/officer/
+Flextable documentation:https://davidgohel.github.io/flextable/
+magick documentation: https://cran.r-project.org/web/packages/magick/vignettes/intro.html
+
+Images used in the video:
+Source TMA: https://zenodo.org/records/4986399
+Source ki67: https://openslide.cs.cmu.edu/download/openslide-testdata/Hamamatsu/
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(magick)
+library(officer)
+library(flextable)
+```
+
+
+#Load the dataset with the measurements
+```{r}
+dataset<- read.csv("./qupath/measurements/measurements.csv")
+head(dataset)
+```
+
+
+#List the files
+```{r}
+list_imgs<- list.files("./qupath/cores/images", pattern = ".png",full.names = TRUE)
+
+#extract just the numbers of the list of names and order them. 
+sorted_names <- list_imgs[order(as.numeric(gsub("[^0-9]", "", list_imgs)))]
+head(sorted_names)
+```
+
+
+#Load the pptx template
+```{r}
+pptx_dir = "./demo_tma.pptx"
+```
+
+
+
+
+#Functions
+```{r}
+
+create_montage <- function(image_dir){
+  
+  image <- image_read(image_dir)
+  
+  #change the folder to select the mask. read the mask
+  mask_dir<- gsub("images","masks", image_dir)
+  mask <- image_read(mask_dir)
+  
+  #create the montage using magick
+  montage <- image_append(c(image, mask))
+  
+  #convert to ggplot2
+  montage_raster <- as.raster(montage)
+  p<-ggplot()+annotation_raster(montage_raster, xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf)+theme_void()
+  
+  #return the plot
+  return(p)
+}
+
+
+
+create_summary_pptx<- function(list_imgs, dataset, pptx_dir){
+  
+  doc<- read_pptx(path= pptx_dir)
+  
+  lapply(list_imgs,function(img){
+    
+    #add slide
+    doc<- add_slide(doc)
+    
+    #get the img name and put it as tittle slide
+    img_title = gsub(".*/|\\.png$", "", img)
+    doc <- ph_with(doc, value = img_title, location = ph_location_type(type = "title") )
+    
+    #filter the columns of interest and round decimals. 
+    summary_percentage<- dataset %>% filter(Case.ID == img_title) %>% select(Tumor_Percent,Stroma_Percent)
+    summary_percentage$Tumor_Percent<- round(summary_percentage$Tumor_Percent,2)
+    summary_percentage$Stroma_Percent<- round(summary_percentage$Stroma_Percent,2)
+    
+    #create the flextable and adjust the display
+    summary_percentage<- flextable(summary_percentage,cwidth = 2.0)
+    summary_percentage<- align(summary_percentage, part = "header", align = "center")
+    summary_percentage<- align(summary_percentage, part = "body", align = "center")
+    summary_percentage<- color(summary_percentage, j = "Tumor_Percent", part = "header", color = "red")
+    summary_percentage<- color(summary_percentage, j = "Stroma_Percent",part = "header",color= "#B3D3B8")
+    doc<- ph_with(doc, summary_percentage, location = ph_location( top = 1.40, left=4.66))
+    
+    #put the montage in the slide
+    p<- create_montage(img)
+    doc<- ph_with(doc, p, location = ph_location( top = 2.12, left=1.26, width =10.8 , height = 5.1))
+    
+    #print for log
+    message<- paste0("Image ", img_title, " completed")
+    print(message)
+    
+  })
+  
+  #write the pptx
+  print(doc, target = pptx_dir) 
+  
+  print("Summary completed!")
+}
+
+
+```
+
+
+
+
+#Create the summary
+```{r}
+create_summary_pptx(sorted_names,dataset,pptx_dir)
+```
+
+
+
+
