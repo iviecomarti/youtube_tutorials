@@ -1,4 +1,4 @@
-# YouTube Tutorials & Code Sharing
+# YouTube Tutorials
 
 Hello everyone!
 
